@@ -1,0 +1,5 @@
+[general]
+ignore=body-max-line-length
+
+[title]
+max-length=72
