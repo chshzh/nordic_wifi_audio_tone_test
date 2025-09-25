@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
-menu "Nordic Shell sample"
+menu "Shell With Tone"
 
 if NET_BUF_FIXED_DATA_SIZE
 
@@ -29,5 +29,22 @@ config NET_PKT_BUF_RX_DATA_POOL_SIZE
 endif
 
 source "Kconfig.zephyr"
+
+config TONE_SHELL
+	bool "Enable tone streaming shell commands"
+	select LOG
+	select SETTINGS
+	select NET_UDP
+	default y
+	help
+	  Adds the 'tone' shell command group for generating and streaming
+	  sine wave audio over UDP. Disable to remove tone functionality.
+
+config TONE_MAX_SAMPLES_PER_PACKET
+	int "Maximum PCM samples per UDP packet"
+	default 2048
+	help
+	  Upper limit for samples placed in each tone UDP payload to bound
+	  buffer requirements.
 
 endmenu
