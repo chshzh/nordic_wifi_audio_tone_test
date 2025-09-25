@@ -43,7 +43,8 @@ class Stats:
     def __init__(self):
         self.start_time = time.monotonic()
         self.last_report = self.start_time
-        self.received_packets = 0
+        self.total_received = 0
+        self.received_since_last_report = 0
         self.lost_packets = 0
         self.last_seq = None
         self.total_bytes = 0
@@ -59,7 +60,8 @@ class Stats:
                 LOGGER.warning("Sequence gap: expected %d got %d (lost %d)", expected, seq, gap)
             self.intervals.append(now)
         self.last_seq = seq
-        self.received_packets += 1
+        self.total_received += 1
+        self.received_since_last_report += 1
         self.total_bytes += payload_len
 
     def report_needed(self, period_s: float) -> bool:
@@ -69,21 +71,23 @@ class Stats:
         now = time.monotonic()
         elapsed = now - self.start_time
         bitrate_kbps = (self.total_bytes * 8 / elapsed) / 1000 if elapsed > 0 else 0.0
-        packet_rate = self.received_packets / elapsed if elapsed > 0 else 0.0
+        packet_rate = self.total_received / elapsed if elapsed > 0 else 0.0
         LOGGER.info(
-            "Stats: received=%d lost=%d bitrate=%.1f kbps packet_rate=%.1f/s buffer=%.1f ms",
-            self.received_packets,
+            "Stats: received=%d total_received=%d lost=%d bitrate=%.1f kbps packet_rate=%.1f/s buffer=%.1f ms",
+            self.received_since_last_report,
+            self.total_received,
             self.lost_packets,
             bitrate_kbps,
             packet_rate,
             jitter_buffer_samples / sample_rate * 1000.0,
         )
+        self.received_since_last_report = 0  # Reset counter for next report period
         self.last_report = now
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Receive and play UDP sine tone stream")
-    parser.add_argument("--listen-port", type=int, default=5000, help="UDP port to bind")
+    parser.add_argument("--listen-port", type=int, default=50005, help="UDP port to bind")
     parser.add_argument("--sample-rate", type=int, default=DEFAULT_SAMPLE_RATE, help="Expected sample rate")
     parser.add_argument("--channels", type=int, default=DEFAULT_CHANNELS, help="Channel count (mono=1)")
     parser.add_argument("--jitter-buffer-ms", type=float, default=60.0, help="Jitter buffer depth in ms")
@@ -174,6 +178,10 @@ def main() -> int:
     sock.bind(("0.0.0.0", args.listen_port))
     sock.settimeout(1.0)
     LOGGER.info("Listening on UDP port %d", args.listen_port)
+    
+    # Remind user about port configuration when using default
+    if args.listen_port == 50005:
+        LOGGER.info("Using default port 50005. To use a different port, specify --listen-port <port_number>")
 
     playback_queue: queue.Queue[bytes] = queue.Queue(maxsize=64)
     stop_event = threading.Event()

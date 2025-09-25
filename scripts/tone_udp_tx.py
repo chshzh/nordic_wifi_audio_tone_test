@@ -16,7 +16,7 @@ import time
 
 LOGGER = logging.getLogger("tone_udp_tx")
 DEFAULT_SAMPLE_RATE = 44_100
-DEFAULT_PACKET_MS = 20
+DEFAULT_PACKET_MS = 10
 HEADER_FMT = ">III"  # sequence, cumulative samples, timestamp (us)
 HEADER_LEN = struct.calcsize(HEADER_FMT)
 INT16_MAX = 2 ** 15 - 1
@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Stream a PCM sine tone over UDP using wifi_audio_tone_test format",
     )
     parser.add_argument("--ip", required=True, help="Destination IPv4 address")
-    parser.add_argument("--port", type=int, required=True, help="Destination UDP port")
+    parser.add_argument("--port", type=int, default=50005, help="Destination UDP port")
     parser.add_argument("--freq", type=float, default=1000.0, help="Tone frequency in Hz")
     parser.add_argument(
         "--amplitude",
@@ -87,6 +87,10 @@ def main() -> int:
         args.packet_ms,
         payload_len,
     )
+    
+    # Remind user about port configuration when using default
+    if args.port == 50005:
+        LOGGER.info("Using default port 50005. To use a different port, specify --port <port_number>")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, max(payload_len * 4, 65536))
@@ -96,13 +100,15 @@ def main() -> int:
     sample_counter = 0
     interval_s = args.packet_ms / 1000.0
     next_send = time.perf_counter()
+    start_time_ns = time.time_ns()  # Store start time for relative timestamp calculation
 
     try:
         while True:
             now = time.perf_counter()
             if now < next_send:
                 time.sleep(next_send - now)
-            timestamp_us = int(time.time_ns() // 1000)
+            # Use relative timestamp in microseconds to fit in 32-bit unsigned int
+            timestamp_us = int((time.time_ns() - start_time_ns) // 1000) & 0xFFFFFFFF
             header = struct.pack(HEADER_FMT, seq, sample_counter, timestamp_us)
             sent = sock.sendto(header + pcm_payload, dest)
             if sent != HEADER_LEN + payload_len:
