@@ -17,7 +17,7 @@ This project provides:
 Build and flash the firmware:
 ```bash
 cd shell_with_tone
-west build -b nrf7002dk_nrf5340_cpuapp
+west build -p -b nrf7002dk/nrf5340/cpuapp -- -DEXTRA_CONF=overlay-tone.conf
 west flash
 ```
 

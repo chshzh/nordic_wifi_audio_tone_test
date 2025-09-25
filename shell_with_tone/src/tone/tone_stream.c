@@ -7,29 +7,26 @@
 #include <errno.h>
 #include <math.h>
 #include <string.h>
+#include <tone.h>
 
 #include <zephyr/logging/log.h>
-#include <zephyr/net/net_if.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/socket.h>
-#include <zephyr/sys/util.h>
 #include <zephyr/sys/byteorder.h>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(tone_stream, CONFIG_LOG_DEFAULT_LEVEL);
 
-#define LUT_POINTS      1024U
-#define PHASE_FRAC_BITS 22U
-#define PHASE_FRAC_MASK ((1U << PHASE_FRAC_BITS) - 1U)
+#define LUT_POINTS 1024U
 
 struct tone_packet_header {
 	uint32_t seq;
 	uint32_t sample_count;
 	uint32_t timestamp_us;
 } __packed;
+
+/* Buffer for one period of tone (max for 100Hz at 48kHz = 480 samples) */
+#define TONE_PERIOD_MAX_SAMPLES 480
 
 struct tone_stream_context {
 	struct tone_stream_settings settings;
@@ -38,9 +35,9 @@ struct tone_stream_context {
 	uint32_t seq_num;
 	uint32_t sample_counter;
 	uint16_t samples_per_packet;
-	uint32_t phase_acc;
-	uint32_t phase_step;
-	int16_t lut[LUT_POINTS];
+	int16_t tone_period[TONE_PERIOD_MAX_SAMPLES];
+	size_t tone_period_samples;
+	uint32_t tone_position;
 	struct k_work_delayable work;
 	struct k_mutex lock;
 } static ctx;
@@ -52,51 +49,42 @@ static inline uint32_t micros_now(void)
 	return k_ticks_to_us_ceil32(k_uptime_ticks());
 }
 
-static int ensure_network_ready(void)
+static int generate_tone_period(void)
 {
-	struct net_if *iface = net_if_get_default();
+	size_t tone_size_bytes;
+	float amplitude = ctx.settings.amplitude_pct / 100.0f;
 
-	if (iface == NULL) {
-		LOG_ERR("No default network interface");
-		return -ENODEV;
+	int ret = tone_gen(ctx.tone_period, &tone_size_bytes, ctx.settings.frequency_hz,
+			   ctx.settings.sample_rate_hz, amplitude);
+	if (ret != 0) {
+		LOG_ERR("tone_gen failed: %d", ret);
+		return ret;
 	}
 
-	if (!net_if_is_admin_up(iface) || !net_if_is_up(iface)) {
-		LOG_WRN("Default network interface is not up");
-		return -ENETDOWN;
-	}
+	ctx.tone_period_samples = tone_size_bytes / sizeof(int16_t);
+	ctx.tone_position = 0;
+
+	LOG_INF("Generated tone period: %u samples for %u Hz", ctx.tone_period_samples,
+		ctx.settings.frequency_hz);
 
 	return 0;
 }
 
-static void update_phase_step(void)
-{
-	ctx.phase_step = ((uint64_t)ctx.settings.frequency_hz << PHASE_FRAC_BITS) * LUT_POINTS /
-			 ctx.settings.sample_rate_hz;
-}
-
-static void generate_lut(void)
-{
-	const double amplitude = (ctx.settings.amplitude_pct / 100.0) * INT16_MAX;
-
-	for (uint32_t i = 0; i < LUT_POINTS; i++) {
-		double angle = (2.0 * M_PI * i) / LUT_POINTS;
-		ctx.lut[i] = (int16_t)lrint(amplitude * sin(angle));
-	}
-}
-
 static void fill_pcm_samples(int16_t *pcm, uint32_t samples)
 {
-	uint32_t phase = ctx.phase_acc;
-	const uint32_t step = ctx.phase_step;
-
-	for (uint32_t i = 0; i < samples; i++) {
-		uint32_t index = (phase >> PHASE_FRAC_BITS) & (LUT_POINTS - 1U);
-		pcm[i] = ctx.lut[index];
-		phase = (phase + step) & ((LUT_POINTS << PHASE_FRAC_BITS) - 1U);
+	if (ctx.tone_period_samples == 0) {
+		/* No tone generated yet, fill with silence */
+		memset(pcm, 0, samples * sizeof(int16_t));
+		return;
 	}
 
-	ctx.phase_acc = phase;
+	for (uint32_t i = 0; i < samples; i++) {
+		pcm[i] = ctx.tone_period[ctx.tone_position];
+		ctx.tone_position++;
+		if (ctx.tone_position >= ctx.tone_period_samples) {
+			ctx.tone_position = 0; /* Loop back to start of period */
+		}
+	}
 }
 
 static int configure_destination_socket(void)
@@ -147,10 +135,14 @@ static void send_work_handler(struct k_work *item)
 
 	const uint32_t samples = ctx.samples_per_packet;
 
+	uint32_t seq = ctx.seq_num++;
+	uint32_t sample_count = ctx.sample_counter;
+	uint32_t timestamp = micros_now();
+
 	struct tone_packet_header header = {
-		.seq = sys_cpu_to_be32(ctx.seq_num++),
-		.sample_count = sys_cpu_to_be32(ctx.sample_counter),
-		.timestamp_us = sys_cpu_to_be32(micros_now()),
+		.seq = sys_cpu_to_be32(seq),
+		.sample_count = sys_cpu_to_be32(sample_count),
+		.timestamp_us = sys_cpu_to_be32(timestamp),
 	};
 
 	ctx.sample_counter += samples;
@@ -200,8 +192,7 @@ int tone_stream_init(void)
 
 	k_mutex_init(&ctx.lock);
 	k_work_init_delayable(&ctx.work, send_work_handler);
-	generate_lut();
-	update_phase_step();
+	ctx.tone_period_samples = 0;
 
 	return 0;
 }
@@ -265,9 +256,14 @@ int tone_stream_set_params(uint16_t freq_hz, uint8_t amplitude_pct, uint32_t sam
 	ctx.settings.sample_rate_hz = sample_rate_hz;
 	ctx.settings.packet_duration_ms = packet_ms;
 	ctx.samples_per_packet = samples;
-	ctx.phase_acc = 0;
-	update_phase_step();
-	generate_lut();
+
+	/* Generate new tone period with updated parameters */
+	int ret = generate_tone_period();
+	if (ret != 0) {
+		k_mutex_unlock(&ctx.lock);
+		return ret;
+	}
+
 	k_mutex_unlock(&ctx.lock);
 
 	return 0;
@@ -285,12 +281,6 @@ int tone_stream_start(const struct shell *shell)
 	if (ctx.settings.dest_port == 0U || ctx.settings.dest_ipv4 == 0U) {
 		k_mutex_unlock(&ctx.lock);
 		return -ENOTCONN;
-	}
-
-	int net_ready = ensure_network_ready();
-	if (net_ready < 0) {
-		k_mutex_unlock(&ctx.lock);
-		return net_ready;
 	}
 
 	if (ctx.samples_per_packet == 0U) {
@@ -311,9 +301,17 @@ int tone_stream_start(const struct shell *shell)
 
 	ctx.seq_num = 0;
 	ctx.sample_counter = 0;
-	ctx.phase_acc = 0;
-	update_phase_step();
-	generate_lut();
+	ctx.tone_position = 0;
+
+	/* Generate tone period if not already done */
+	if (ctx.tone_period_samples == 0) {
+		ret = generate_tone_period();
+		if (ret != 0) {
+			k_mutex_unlock(&ctx.lock);
+			return ret;
+		}
+	}
+
 	ctx.streaming = true;
 
 	k_mutex_unlock(&ctx.lock);

@@ -35,6 +35,7 @@ config TONE_SHELL
 	select LOG
 	select SETTINGS
 	select NET_UDP
+	select TONE
 	default y
 	help
 	  Adds the 'tone' shell command group for generating and streaming

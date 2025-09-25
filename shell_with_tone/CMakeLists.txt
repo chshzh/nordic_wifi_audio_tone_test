@@ -27,3 +27,5 @@ target_sources_ifdef(CONFIG_TONE_SHELL
 	PRIVATE
 	src/tone/tone_stream.c
 	src/tone/tone_shell.c)
+
+
