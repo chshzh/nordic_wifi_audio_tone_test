@@ -18,7 +18,7 @@ extern "C" {
 #define TONE_DEFAULT_SAMPLE_RATE_HZ     44100U
 #define TONE_DEFAULT_PACKET_DURATION_MS 10U
 #define TONE_DEFAULT_FREQUENCY_HZ       1000U
-#define TONE_DEFAULT_AMPLITUDE_PCT      80U
+#define TONE_DEFAULT_AMPLITUDE_PCT      50U
 
 #define TONE_MAX_SAMPLES_PER_PACKET CONFIG_TONE_MAX_SAMPLES_PER_PACKET
 #define TONE_MAX_PAYLOAD_BYTES      (TONE_MAX_SAMPLES_PER_PACKET * sizeof(int16_t))
@@ -40,7 +40,10 @@ void tone_stream_stop(const struct shell *shell);
 void tone_stream_status(const struct shell *shell);
 int tone_stream_set_target(const char *ip_str, uint16_t port);
 int tone_stream_set_params(uint16_t freq_hz, uint8_t amplitude_pct, uint32_t sample_rate_hz,
-			   uint16_t packet_ms);
+		   uint16_t packet_ms);
+int tone_stream_adjust_amplitude(int delta_pct);
+uint8_t tone_stream_get_current_amplitude(void);
+int tone_stream_adjust_amplitude(int delta_pct);
 
 #ifdef __cplusplus
 }

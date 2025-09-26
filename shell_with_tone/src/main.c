@@ -16,6 +16,42 @@
 #include <zephyr/device.h>
 #include <zephyr/net/net_config.h>
 
+#if IS_ENABLED(CONFIG_DK_LIBRARY)
+#include <dk_buttons_and_leds.h>
+#endif
+
+#if IS_ENABLED(CONFIG_TONE_SHELL)
+#include "tone/tone_stream.h"
+#endif
+#if IS_ENABLED(CONFIG_TONE_SHELL)
+static uint8_t get_amp_and_print(const char *label)
+{
+	uint8_t amp = tone_stream_get_current_amplitude();
+	printk("%s %u%%\n", label, amp);
+	return amp;
+}
+#endif
+#if IS_ENABLED(CONFIG_DK_LIBRARY) && IS_ENABLED(CONFIG_TONE_SHELL)
+#define AMP_STEP_PERCENT 5
+
+static void button_handler(uint32_t button_state, uint32_t has_changed)
+{
+	if (has_changed & DK_BTN1_MSK && (button_state & DK_BTN1_MSK)) {
+		if (tone_stream_adjust_amplitude(-AMP_STEP_PERCENT) == 0) {
+			printk("Tone amplitude decreased to %u%%\n",
+			       tone_stream_get_current_amplitude());
+		}
+	}
+
+	if (has_changed & DK_BTN2_MSK && (button_state & DK_BTN2_MSK)) {
+		if (tone_stream_adjust_amplitude(AMP_STEP_PERCENT) == 0) {
+			printk("Tone amplitude increased to %u%%\n",
+			       tone_stream_get_current_amplitude());
+		}
+	}
+}
+#endif
+
 #if defined(CONFIG_USB_DEVICE_STACK) && !defined(CONFIG_BOARD_THINGY91X_NRF5340_CPUAPP)
 #define USES_USB_ETH 1
 #else
@@ -55,6 +91,14 @@ int main(void)
 			       NRF_CLOCK_HFCLK_DIV_1);
 #endif
 	printk("Starting %s with CPU frequency: %d MHz\n", CONFIG_BOARD, SystemCoreClock/MHZ(1));
+#if IS_ENABLED(CONFIG_DK_LIBRARY) && IS_ENABLED(CONFIG_TONE_SHELL)
+	if (dk_buttons_init(button_handler) == 0) {
+		printk("Tone amplitude control: BTN1 = -5%%, BTN2 = +5%%\n");
+		get_amp_and_print("Tone amplitude");
+	} else {
+		printk("Failed to init DK buttons\n");
+	}
+#endif
 
 #if USES_USB_ETH
 	init_usb();

@@ -41,6 +41,7 @@ struct tone_stream_context {
 	uint16_t samples_per_packet;
 	uint32_t interval_us;
 	uint64_t next_deadline_us;
+	uint32_t consecutive_send_failures;
 	int16_t tone_period[TONE_PERIOD_MAX_SAMPLES];
 	size_t tone_period_samples;
 	uint32_t tone_position;
@@ -59,6 +60,12 @@ static int generate_tone_period(void)
 {
 	size_t tone_size_bytes;
 	float amplitude = ctx.settings.amplitude_pct / 100.0f;
+
+	if (ctx.settings.amplitude_pct == 0U || amplitude <= 0.0f) {
+		ctx.tone_period_samples = 0;
+		ctx.tone_position = 0;
+		return 0;
+	}
 
 	int ret = tone_gen(ctx.tone_period, &tone_size_bytes, ctx.settings.frequency_hz,
 			   ctx.settings.sample_rate_hz, amplitude);
@@ -182,7 +189,17 @@ static void send_work_handler(struct k_work *item)
 
 	ssize_t sent = send(ctx.sock_fd, tx_buffer, sizeof(header) + payload_bytes, 0);
 	if (sent < 0) {
-		LOG_ERR("send() failed: %d", errno);
+		ctx.consecutive_send_failures++;
+		int err = errno;
+		if (ctx.consecutive_send_failures <= 3) {
+			LOG_DBG("send() failed: %d (attempt %u)", err,
+				ctx.consecutive_send_failures);
+		}
+		if (ctx.consecutive_send_failures == 3) {
+			LOG_WRN("UDP send failing repeatedly (err %d). Retrying...", err);
+		}
+	} else {
+		ctx.consecutive_send_failures = 0;
 	}
 
 	reschedule_next_packet();
@@ -304,6 +321,42 @@ int tone_stream_set_params(uint16_t freq_hz, uint8_t amplitude_pct, uint32_t sam
 	return 0;
 }
 
+int tone_stream_adjust_amplitude(int delta_pct)
+{
+	int ret = 0;
+
+	k_mutex_lock(&ctx.lock, K_FOREVER);
+
+	uint8_t new_amp = ctx.settings.amplitude_pct;
+	int new_val = (int)new_amp + delta_pct;
+	new_val = CLAMP(new_val, 0, 100);
+	new_amp = (uint8_t)new_val;
+
+	if (new_amp == ctx.settings.amplitude_pct) {
+		ret = 0;
+		goto exit;
+	}
+
+	uint8_t old_amp = ctx.settings.amplitude_pct;
+	ctx.settings.amplitude_pct = new_amp;
+
+	ret = generate_tone_period();
+	if (ret != 0) {
+		/* Restore previous amplitude on failure */
+		ctx.settings.amplitude_pct = old_amp;
+		(void)generate_tone_period();
+		goto exit;
+	}
+
+	ctx.tone_position = 0;
+	LOG_INF("Tone amplitude set to %u%%", ctx.settings.amplitude_pct);
+
+exit:
+	k_mutex_unlock(&ctx.lock);
+
+	return ret;
+}
+
 int tone_stream_start(const struct shell *shell)
 {
 	k_mutex_lock(&ctx.lock, K_FOREVER);
@@ -355,6 +408,7 @@ int tone_stream_start(const struct shell *shell)
 
 	ctx.streaming = true;
 	ctx.next_deadline_us = micros_now();
+	ctx.consecutive_send_failures = 0;
 
 	k_mutex_unlock(&ctx.lock);
 
@@ -413,4 +467,15 @@ void tone_stream_status(const struct shell *shell)
 	shell_print(shell, "  Sample rate: %u Hz, packet %u ms", settings.sample_rate_hz,
 		    settings.packet_duration_ms);
 	shell_print(shell, "  Packets sent: %u", packets);
+}
+
+uint8_t tone_stream_get_current_amplitude(void)
+{
+    uint8_t amp;
+
+    k_mutex_lock(&ctx.lock, K_FOREVER);
+    amp = ctx.settings.amplitude_pct;
+    k_mutex_unlock(&ctx.lock);
+
+    return amp;
 }
