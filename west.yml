@@ -14,7 +14,7 @@ manifest:
     - name: sdk-zephyr
       path: zephyr
       remote: ncs
-      revision: v3.1.0
+      revision: ncs-v3.1.0
       import:
         name-allowlist:
           - cmsis
