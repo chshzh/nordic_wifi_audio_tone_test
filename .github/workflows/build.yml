@@ -39,22 +39,10 @@ jobs:
     strategy:
       matrix:
         config:
-          - name: "Wi-Fi Shell Default"
-            build_dir: "build_default"
-            overlay: ""
-            description: "Default Wi-Fi shell configuration"
           - name: "Wi-Fi Tone Shell"
             build_dir: "build_tone"
             overlay: "overlay-tone.conf"
             description: "Wi-Fi shell with tone generation"
-          - name: "Wi-Fi Monitor Mode"
-            build_dir: "build_monitor"
-            overlay: "overlay-monitor-mode.conf"
-            description: "Wi-Fi shell in monitor mode"
-          - name: "Wi-Fi Promiscuous Mode"
-            build_dir: "build_promiscuous"
-            overlay: "overlay-promiscuous-mode.conf"
-            description: "Wi-Fi shell in promiscuous mode"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -190,7 +178,6 @@ jobs:
             cp zephyr/.clang-format nordic_wifi_audio_tone_test/.clang-format
           fi
           FILES=$(find nordic_wifi_audio_tone_test/shell_with_tone/src -name "*.c" -o -name "*.h" 2>/dev/null || true)
-          SCRIPT_FILES=$(find nordic_wifi_audio_tone_test/scripts -name "*.py" 2>/dev/null || true)
 
           if [ -n "$FILES" ]; then
             echo "Found C/C++ files for formatting check:"
@@ -203,62 +190,9 @@ jobs:
             echo "No C/C++ source files found for clang-format check"
           fi
 
-          if [ -n "$SCRIPT_FILES" ]; then
-            echo "Found Python script files:"
-            echo "$SCRIPT_FILES"
-            # Optional: Add Python formatting check with black or flake8
-            for file in $SCRIPT_FILES; do
-              echo "Python file found: $file"
-              python3 -m py_compile "$file" || echo "Warning: $file has syntax issues"
-            done
-          fi
-
-  test-python-scripts:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          path: app-workspace/nordic_wifi_audio_tone_test
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
-        working-directory: app-workspace/nordic_wifi_audio_tone_test/scripts
-        run: |
-          python -m pip install --upgrade pip
-          # Install common networking and audio libraries that might be used
-          pip install numpy pyaudio socket argparse
-
-      - name: Test Python script syntax
-        working-directory: app-workspace/nordic_wifi_audio_tone_test/scripts
-        run: |
-          echo "Testing Python script syntax..."
-          for script in *.py; do
-            if [ -f "$script" ]; then
-              echo "Checking syntax: $script"
-              python -m py_compile "$script"
-              echo "✓ $script syntax OK"
-            fi
-          done
-
-      - name: Test script help output
-        working-directory: app-workspace/nordic_wifi_audio_tone_test/scripts
-        run: |
-          echo "Testing script help output..."
-          for script in tone_udp_*.py; do
-            if [ -f "$script" ]; then
-              echo "Testing help for: $script"
-              timeout 10s python "$script" --help || echo "Script $script may not support --help"
-            fi
-          done
-
   create-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-in-docker, validate-documentation, static-analysis, test-python-scripts]
+    needs: [build-in-docker, validate-documentation, static-analysis]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -303,21 +237,23 @@ jobs:
           body: |
             ## Nordic Wi-Fi Audio Tone Test Release
 
-            This release contains firmware binaries for the nRF7002DK with different configurations:
+            This release contains firmware binaries for the nRF7002DK Wi-Fi Tone Shell application.
 
-            - **Wi-Fi Shell Default**: Basic Wi-Fi shell functionality
-            - **Wi-Fi Tone Shell**: Wi-Fi shell with tone generation capabilities
-            - **Wi-Fi Monitor Mode**: Wi-Fi shell configured for monitor mode
-            - **Wi-Fi Promiscuous Mode**: Wi-Fi shell configured for promiscuous mode
+            - **Wi-Fi Tone Shell**: Wi-Fi shell with tone generation capabilities for audio testing over UDP
 
             ### Files included:
-            - `*_firmware.hex`: Main firmware binary for flashing
-            - `*_firmware.elf`: ELF file for debugging
-            - `*_merged.hex`: Merged hex file (if available)
+            - `Wi-Fi_Tone_Shell_firmware.hex`: Main firmware binary for flashing
+            - `Wi-Fi_Tone_Shell_firmware.elf`: ELF file for debugging
+            - `Wi-Fi_Tone_Shell_merged.hex`: Merged hex file (if available)
 
             ### Hardware Support:
             - nRF7002DK (nRF5340 + nRF7002)
 
+            ### Features:
+            - Wi-Fi connectivity and shell commands
+            - Audio tone generation for network testing
+            - UDP audio streaming capabilities
+
             ### Usage:
-            Flash the appropriate firmware.hex file to your nRF7002DK using nRF Connect for Desktop Programmer or command line tools.
+            Flash the `Wi-Fi_Tone_Shell_firmware.hex` file to your nRF7002DK using nRF Connect for Desktop Programmer or command line tools.
 
