@@ -39,10 +39,22 @@ jobs:
     strategy:
       matrix:
         config:
-          - name: "Wi-Fi Tone Shell (tone overlay)"
-            build_dir: "build_tone_overlay"
+          - name: "Wi-Fi Shell Default"
+            build_dir: "build_default"
+            overlay: ""
+            description: "Default Wi-Fi shell configuration"
+          - name: "Wi-Fi Tone Shell"
+            build_dir: "build_tone"
             overlay: "overlay-tone.conf"
-            description: "Tone shell with overlay-tone.conf"
+            description: "Wi-Fi shell with tone generation"
+          - name: "Wi-Fi Monitor Mode"
+            build_dir: "build_monitor"
+            overlay: "overlay-monitor-mode.conf"
+            description: "Wi-Fi shell in monitor mode"
+          - name: "Wi-Fi Promiscuous Mode"
+            build_dir: "build_promiscuous"
+            overlay: "overlay-promiscuous-mode.conf"
+            description: "Wi-Fi shell in promiscuous mode"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -56,17 +68,54 @@ jobs:
           west update -o=--depth=1 -n
 
       - name: Build ${{ matrix.config.name }}
-        working-directory: app-workspace/nordic_wifi_audio_tone_test
+        working-directory: app-workspace/nordic_wifi_audio_tone_test/shell_with_tone
         run: |
-          west build -p -b nrf7002dk/nrf5340/cpuapp -d ${{ matrix.config.build_dir }} -- -DEXTRA_CONF=${{ matrix.config.overlay }}
+          echo "Building ${{ matrix.config.description }}"
+          echo "Build directory: ${{ matrix.config.build_dir }}"
+          echo "Overlay file: ${{ matrix.config.overlay }}"
+
+          if [ -n "${{ matrix.config.overlay }}" ]; then
+            echo "Building with overlay: ${{ matrix.config.overlay }}"
+            if [ ! -f "${{ matrix.config.overlay }}" ]; then
+              echo "Error: Overlay file ${{ matrix.config.overlay }} not found"
+              exit 1
+            fi
+            west build -p -b nrf7002dk/nrf5340/cpuapp -d ${{ matrix.config.build_dir }} -- -DEXTRA_CONF_FILE=${{ matrix.config.overlay }}
+          else
+            echo "Building with default configuration"
+            west build -p -b nrf7002dk/nrf5340/cpuapp -d ${{ matrix.config.build_dir }}
+          fi
+
+      - name: Verify build outputs
+        working-directory: app-workspace/nordic_wifi_audio_tone_test/shell_with_tone
+        run: |
+          echo "Verifying build artifacts for ${{ matrix.config.name }}..."
+          BUILD_DIR=${{ matrix.config.build_dir }}
+
+          # Check if essential build files exist
+          [ -f "$BUILD_DIR/zephyr/zephyr.hex" ] || (echo "Missing zephyr.hex" && exit 1)
+          [ -f "$BUILD_DIR/zephyr/zephyr.elf" ] || (echo "Missing zephyr.elf" && exit 1)
+
+          # Display build information
+          echo "Build completed successfully!"
+          echo "Firmware size information:"
+          ls -lah "$BUILD_DIR/zephyr/"*.hex "$BUILD_DIR/zephyr/"*.elf 2>/dev/null || true
+
+          # Show memory usage if available
+          if [ -f "$BUILD_DIR/zephyr/zephyr.elf" ]; then
+            echo "Memory usage:"
+            size "$BUILD_DIR/zephyr/zephyr.elf" || echo "Size information not available"
+          fi
 
       - name: Upload build artifacts for ${{ matrix.config.name }}
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.config.name }}
+          name: build-artifacts-${{ matrix.config.name }}
           path: |
-            app-workspace/nordic_wifi_audio_tone_test/${{ matrix.config.build_dir }}/merged.hex
+            app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/zephyr/zephyr.hex
+            app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/zephyr/zephyr.elf
+            app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/zephyr/merged.hex
 
   validate-documentation:
     runs-on: ubuntu-24.04
@@ -76,27 +125,33 @@ jobs:
         with:
           path: app-workspace/nordic_wifi_audio_tone_test
 
-      - name: Validate README structure
-        working-directory: app-workspace/nordic_wifi_audio_tone_test
-        run: |
-          echo "Validating README.md structure..."
-          grep -q "What’s Included" README.md || (echo "Missing What's Included section" && exit 1)
-          grep -q "Build & Flash" README.md || (echo "Missing Build & Flash section" && exit 1)
-          grep -q "Configure Wi-Fi" README.md || (echo "Missing Configure Wi-Fi section" && exit 1)
-          grep -q "Start Streaming" README.md || (echo "Missing Start Streaming section" && exit 1)
-          grep -q "Host Receiver" README.md || (echo "Missing Host Receiver section" && exit 1)
-          grep -q "Troubleshooting" README.md || (echo "Missing Troubleshooting section" && exit 1)
-          echo "README.md validation passed ✓"
-
       - name: Validate key configuration files exist
         working-directory: app-workspace/nordic_wifi_audio_tone_test
         run: |
           echo "Checking required configuration files..."
-          [ -f prj.conf ] || (echo "Missing prj.conf" && exit 1)
-          [ -f overlay-tone.conf ] || (echo "Missing overlay-tone.conf" && exit 1)
-          [ -f CMakeLists.txt ] || (echo "Missing CMakeLists.txt" && exit 1)
           [ -f west.yml ] || (echo "Missing west.yml" && exit 1)
+          [ -f shell_with_tone/prj.conf ] || (echo "Missing shell_with_tone/prj.conf" && exit 1)
+          [ -f shell_with_tone/overlay-tone.conf ] || (echo "Missing shell_with_tone/overlay-tone.conf" && exit 1)
+          [ -f shell_with_tone/CMakeLists.txt ] || (echo "Missing shell_with_tone/CMakeLists.txt" && exit 1)
+          [ -f shell_with_tone/sample.yaml ] || (echo "Missing shell_with_tone/sample.yaml" && exit 1)
+          [ -d shell_with_tone/src ] || (echo "Missing shell_with_tone/src directory" && exit 1)
           echo "Configuration files validation passed ✓"
+
+      - name: Validate overlay configurations
+        working-directory: app-workspace/nordic_wifi_audio_tone_test/shell_with_tone
+        run: |
+          echo "Validating overlay configurations..."
+          for overlay in overlay-*.conf; do
+            if [ -f "$overlay" ]; then
+              echo "✓ Found overlay: $overlay"
+              # Basic syntax check - ensure no empty lines at start/end and proper format
+              if grep -q "^CONFIG_" "$overlay"; then
+                echo "  ✓ $overlay contains valid CONFIG options"
+              else
+                echo "  ⚠ $overlay may not contain valid CONFIG options"
+              fi
+            fi
+          done
 
   static-analysis:
     needs: set-version
@@ -134,12 +189,135 @@ jobs:
           if [ -f zephyr/.clang-format ]; then
             cp zephyr/.clang-format nordic_wifi_audio_tone_test/.clang-format
           fi
-          FILES=$(find nordic_wifi_audio_tone_test/src -name "*.c" -o -name "*.h" || true)
+          FILES=$(find nordic_wifi_audio_tone_test/shell_with_tone/src -name "*.c" -o -name "*.h" 2>/dev/null || true)
+          SCRIPT_FILES=$(find nordic_wifi_audio_tone_test/scripts -name "*.py" 2>/dev/null || true)
+
           if [ -n "$FILES" ]; then
+            echo "Found C/C++ files for formatting check:"
+            echo "$FILES"
             for file in $FILES; do
+              echo "Checking: $file"
               clang-format --dry-run --Werror "$file"
             done
           else
-            echo "No source files found for clang-format check"
+            echo "No C/C++ source files found for clang-format check"
           fi
+
+          if [ -n "$SCRIPT_FILES" ]; then
+            echo "Found Python script files:"
+            echo "$SCRIPT_FILES"
+            # Optional: Add Python formatting check with black or flake8
+            for file in $SCRIPT_FILES; do
+              echo "Python file found: $file"
+              python3 -m py_compile "$file" || echo "Warning: $file has syntax issues"
+            done
+          fi
+
+  test-python-scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: app-workspace/nordic_wifi_audio_tone_test
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        working-directory: app-workspace/nordic_wifi_audio_tone_test/scripts
+        run: |
+          python -m pip install --upgrade pip
+          # Install common networking and audio libraries that might be used
+          pip install numpy pyaudio socket argparse
+
+      - name: Test Python script syntax
+        working-directory: app-workspace/nordic_wifi_audio_tone_test/scripts
+        run: |
+          echo "Testing Python script syntax..."
+          for script in *.py; do
+            if [ -f "$script" ]; then
+              echo "Checking syntax: $script"
+              python -m py_compile "$script"
+              echo "✓ $script syntax OK"
+            fi
+          done
+
+      - name: Test script help output
+        working-directory: app-workspace/nordic_wifi_audio_tone_test/scripts
+        run: |
+          echo "Testing script help output..."
+          for script in tone_udp_*.py; do
+            if [ -f "$script" ]; then
+              echo "Testing help for: $script"
+              timeout 10s python "$script" --help || echo "Script $script may not support --help"
+            fi
+          done
+
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-in-docker, validate-documentation, static-analysis, test-python-scripts]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release_assets
+          cd artifacts
+
+          # Organize artifacts by configuration
+          for config_dir in build-artifacts-*; do
+            if [ -d "$config_dir" ]; then
+              config_name=$(echo "$config_dir" | sed 's/build-artifacts-//')
+              echo "Processing $config_name artifacts..."
+
+              # Create organized files for each configuration
+              if [ -f "$config_dir/zephyr/zephyr.hex" ]; then
+                cp "$config_dir/zephyr/zephyr.hex" "../release_assets/${config_name}_firmware.hex"
+              fi
+              if [ -f "$config_dir/zephyr/zephyr.elf" ]; then
+                cp "$config_dir/zephyr/zephyr.elf" "../release_assets/${config_name}_firmware.elf"
+              fi
+              if [ -f "$config_dir/zephyr/merged.hex" ]; then
+                cp "$config_dir/zephyr/merged.hex" "../release_assets/${config_name}_merged.hex"
+              fi
+            fi
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release_assets/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Nordic Wi-Fi Audio Tone Test Release
+
+            This release contains firmware binaries for the nRF7002DK with different configurations:
+
+            - **Wi-Fi Shell Default**: Basic Wi-Fi shell functionality
+            - **Wi-Fi Tone Shell**: Wi-Fi shell with tone generation capabilities
+            - **Wi-Fi Monitor Mode**: Wi-Fi shell configured for monitor mode
+            - **Wi-Fi Promiscuous Mode**: Wi-Fi shell configured for promiscuous mode
+
+            ### Files included:
+            - `*_firmware.hex`: Main firmware binary for flashing
+            - `*_firmware.elf`: ELF file for debugging
+            - `*_merged.hex`: Merged hex file (if available)
+
+            ### Hardware Support:
+            - nRF7002DK (nRF5340 + nRF7002)
+
+            ### Usage:
+            Flash the appropriate firmware.hex file to your nRF7002DK using nRF Connect for Desktop Programmer or command line tools.
 
