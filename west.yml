@@ -1,0 +1,28 @@
+manifest:
+  version: "0.14"
+  remotes:
+    - name: ncs
+      url-base: https://github.com/nrfconnect
+
+  projects:
+    - name: sdk-nrf
+      path: nrf
+      remote: ncs
+      revision: v3.1.0
+      import:
+        path-prefix: modules
+    - name: sdk-zephyr
+      path: zephyr
+      remote: ncs
+      revision: v3.1.0
+      import:
+        name-allowlist:
+          - cmsis
+          - hal
+          - mcuboot
+          - mbedtls
+          - segger
+          - tinycrypt
+
+  self:
+    path: nordic_wifi_audio_tone_test

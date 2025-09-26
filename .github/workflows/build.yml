@@ -1,0 +1,145 @@
+name: Build and Test Wi-Fi Tone Test
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - "v*"
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  set-version:
+    runs-on: ubuntu-24.04
+    outputs:
+      NCS_VERSION: ${{ steps.extract-version.outputs.NCS_VERSION }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: app-workspace/nordic_wifi_audio_tone_test
+
+      - name: Extract NCS version from west.yml
+        id: extract-version
+        working-directory: app-workspace/nordic_wifi_audio_tone_test
+        run: |
+          NCS_VERSION=$(grep -m1 'revision:' west.yml | awk '{print $2}' | tr -d '"')
+          printf 'NCS_VERSION=%s\n' "$NCS_VERSION" >> "$GITHUB_OUTPUT"
+
+  build-in-docker:
+    needs: set-version
+    runs-on: ubuntu-24.04
+    container: ghcr.io/nrfconnect/sdk-nrf-toolchain:${{ needs.set-version.outputs.NCS_VERSION }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      matrix:
+        config:
+          - name: "Wi-Fi Tone Shell (tone overlay)"
+            build_dir: "build_tone_overlay"
+            overlay: "overlay-tone.conf"
+            description: "Tone shell with overlay-tone.conf"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: app-workspace/nordic_wifi_audio_tone_test
+
+      - name: Prepare west workspace
+        working-directory: app-workspace
+        run: |
+          west init -l nordic_wifi_audio_tone_test
+          west update -o=--depth=1 -n
+
+      - name: Build ${{ matrix.config.name }}
+        working-directory: app-workspace/nordic_wifi_audio_tone_test
+        run: |
+          west build -p -b nrf7002dk/nrf5340/cpuapp -d ${{ matrix.config.build_dir }} -- -DEXTRA_CONF=${{ matrix.config.overlay }}
+
+      - name: Upload build artifacts for ${{ matrix.config.name }}
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.config.name }}
+          path: |
+            app-workspace/nordic_wifi_audio_tone_test/${{ matrix.config.build_dir }}/merged.hex
+
+  validate-documentation:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: app-workspace/nordic_wifi_audio_tone_test
+
+      - name: Validate README structure
+        working-directory: app-workspace/nordic_wifi_audio_tone_test
+        run: |
+          echo "Validating README.md structure..."
+          grep -q "What’s Included" README.md || (echo "Missing What's Included section" && exit 1)
+          grep -q "Build & Flash" README.md || (echo "Missing Build & Flash section" && exit 1)
+          grep -q "Configure Wi-Fi" README.md || (echo "Missing Configure Wi-Fi section" && exit 1)
+          grep -q "Start Streaming" README.md || (echo "Missing Start Streaming section" && exit 1)
+          grep -q "Host Receiver" README.md || (echo "Missing Host Receiver section" && exit 1)
+          grep -q "Troubleshooting" README.md || (echo "Missing Troubleshooting section" && exit 1)
+          echo "README.md validation passed ✓"
+
+      - name: Validate key configuration files exist
+        working-directory: app-workspace/nordic_wifi_audio_tone_test
+        run: |
+          echo "Checking required configuration files..."
+          [ -f prj.conf ] || (echo "Missing prj.conf" && exit 1)
+          [ -f overlay-tone.conf ] || (echo "Missing overlay-tone.conf" && exit 1)
+          [ -f CMakeLists.txt ] || (echo "Missing CMakeLists.txt" && exit 1)
+          [ -f west.yml ] || (echo "Missing west.yml" && exit 1)
+          echo "Configuration files validation passed ✓"
+
+  static-analysis:
+    needs: set-version
+    runs-on: ubuntu-24.04
+    container: ghcr.io/nrfconnect/sdk-nrf-toolchain:${{ needs.set-version.outputs.NCS_VERSION }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: app-workspace/nordic_wifi_audio_tone_test
+
+      - name: Prepare west workspace for analysis
+        working-directory: app-workspace
+        run: |
+          west init -l nordic_wifi_audio_tone_test
+          west update -o=--depth=1 -n
+
+      - name: Run Zephyr checkpatch on diffs
+        working-directory: app-workspace
+        run: |
+          echo "Running Zephyr checkpatch..."
+          if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+            cd nordic_wifi_audio_tone_test && git diff HEAD~1 | ../zephyr/scripts/checkpatch.pl --no-tree -
+          else
+            echo "Single commit detected, skipping diff-based checkpatch"
+          fi
+
+      - name: Check code style with clang-format
+        working-directory: app-workspace
+        run: |
+          echo "Checking C/C++ formatting..."
+          if [ -f zephyr/.clang-format ]; then
+            cp zephyr/.clang-format nordic_wifi_audio_tone_test/.clang-format
+          fi
+          FILES=$(find nordic_wifi_audio_tone_test/src -name "*.c" -o -name "*.h" || true)
+          if [ -n "$FILES" ]; then
+            for file in $FILES; do
+              clang-format --dry-run --Werror "$file"
+            done
+          else
+            echo "No source files found for clang-format check"
+          fi
+
