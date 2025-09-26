@@ -48,4 +48,19 @@ config TONE_MAX_SAMPLES_PER_PACKET
 	  Upper limit for samples placed in each tone UDP payload to bound
 	  buffer requirements.
 
+config TONE_STREAM_WORKQUEUE_STACK_SIZE
+	int "Tone stream workqueue stack size"
+	default 2048
+	depends on TONE_SHELL
+	help
+	  Stack size for the dedicated workqueue that handles tone packet
+	  scheduling.
+
+config TONE_STREAM_WORKQUEUE_PRIORITY
+	int "Tone stream workqueue priority"
+	default -2
+	depends on TONE_SHELL
+	help
+	  Thread priority used by the dedicated tone streaming workqueue.
+
 endmenu

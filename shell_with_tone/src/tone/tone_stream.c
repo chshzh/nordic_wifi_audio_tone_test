@@ -19,6 +19,10 @@ LOG_MODULE_REGISTER(tone_stream, CONFIG_LOG_DEFAULT_LEVEL);
 
 #define LUT_POINTS 1024U
 
+K_THREAD_STACK_DEFINE(tone_stream_work_stack, CONFIG_TONE_STREAM_WORKQUEUE_STACK_SIZE);
+static struct k_work_q tone_stream_work_q;
+static bool tone_stream_work_q_started;
+
 struct tone_packet_header {
 	uint32_t seq;
 	uint32_t sample_count;
@@ -35,6 +39,8 @@ struct tone_stream_context {
 	uint32_t seq_num;
 	uint32_t sample_counter;
 	uint16_t samples_per_packet;
+	uint32_t interval_us;
+	uint64_t next_deadline_us;
 	int16_t tone_period[TONE_PERIOD_MAX_SAMPLES];
 	size_t tone_period_samples;
 	uint32_t tone_position;
@@ -44,9 +50,9 @@ struct tone_stream_context {
 
 static uint8_t tx_buffer[sizeof(struct tone_packet_header) + TONE_MAX_PAYLOAD_BYTES];
 
-static inline uint32_t micros_now(void)
+static inline uint64_t micros_now(void)
 {
-	return k_ticks_to_us_ceil32(k_uptime_ticks());
+	return k_ticks_to_us_floor64(k_uptime_ticks());
 }
 
 static int generate_tone_period(void)
@@ -115,11 +121,26 @@ static int configure_destination_socket(void)
 	return 0;
 }
 
-static void reschedule_next_packet(uint32_t samples)
+static void reschedule_next_packet(void)
 {
-	const uint32_t interval_us =
-		(uint32_t)(((uint64_t)samples * 1000000U) / ctx.settings.sample_rate_hz);
-	k_work_reschedule(&ctx.work, K_USEC(MAX(interval_us, 1U)));
+	const uint32_t interval_us = ctx.interval_us;
+	if (interval_us == 0U) {
+		k_work_reschedule_for_queue(&tone_stream_work_q, &ctx.work, K_NO_WAIT);
+		return;
+	}
+
+	uint64_t now = micros_now();
+	if (ctx.next_deadline_us == 0U) {
+		ctx.next_deadline_us = now + interval_us;
+	} else {
+		ctx.next_deadline_us += interval_us;
+	}
+
+	uint64_t delay_us = (ctx.next_deadline_us > now) ? (ctx.next_deadline_us - now) : interval_us;
+	uint32_t delay_clamped = (uint32_t)CLAMP(delay_us, 1U, (uint64_t)UINT32_MAX);
+
+	k_work_reschedule_for_queue(&tone_stream_work_q, &ctx.work,
+				  K_USEC(delay_clamped));
 }
 
 static void send_work_handler(struct k_work *item)
@@ -137,7 +158,7 @@ static void send_work_handler(struct k_work *item)
 
 	uint32_t seq = ctx.seq_num++;
 	uint32_t sample_count = ctx.sample_counter;
-	uint32_t timestamp = micros_now();
+	uint32_t timestamp = (uint32_t)(micros_now() & 0xFFFFFFFFU);
 
 	struct tone_packet_header header = {
 		.seq = sys_cpu_to_be32(seq),
@@ -164,7 +185,7 @@ static void send_work_handler(struct k_work *item)
 		LOG_ERR("send() failed: %d", errno);
 	}
 
-	reschedule_next_packet(samples);
+	reschedule_next_packet();
 	k_mutex_unlock(&ctx.lock);
 }
 
@@ -172,6 +193,7 @@ static void stop_locked(void)
 {
 	if (ctx.streaming) {
 		ctx.streaming = false;
+		ctx.next_deadline_us = 0U;
 		k_work_cancel_delayable(&ctx.work);
 	}
 
@@ -193,6 +215,17 @@ int tone_stream_init(void)
 	k_mutex_init(&ctx.lock);
 	k_work_init_delayable(&ctx.work, send_work_handler);
 	ctx.tone_period_samples = 0;
+
+	if (!tone_stream_work_q_started) {
+		k_work_queue_init(&tone_stream_work_q);
+		k_work_queue_start(&tone_stream_work_q, tone_stream_work_stack,
+		      K_THREAD_STACK_SIZEOF(tone_stream_work_stack),
+		      K_PRIO_PREEMPT(CONFIG_TONE_STREAM_WORKQUEUE_PRIORITY), NULL);
+		if (IS_ENABLED(CONFIG_THREAD_NAME)) {
+			k_thread_name_set(&tone_stream_work_q.thread, "tone_stream");
+		}
+		tone_stream_work_q_started = true;
+	}
 
 	return 0;
 }
@@ -256,6 +289,8 @@ int tone_stream_set_params(uint16_t freq_hz, uint8_t amplitude_pct, uint32_t sam
 	ctx.settings.sample_rate_hz = sample_rate_hz;
 	ctx.settings.packet_duration_ms = packet_ms;
 	ctx.samples_per_packet = samples;
+	ctx.interval_us = (uint32_t)(((uint64_t)samples * 1000000U) /
+				 ctx.settings.sample_rate_hz);
 
 	/* Generate new tone period with updated parameters */
 	int ret = generate_tone_period();
@@ -293,6 +328,11 @@ int tone_stream_start(const struct shell *shell)
 		}
 	}
 
+	if (ctx.interval_us == 0U) {
+		ctx.interval_us = (uint32_t)(((uint64_t)ctx.samples_per_packet * 1000000U) /
+				  ctx.settings.sample_rate_hz);
+	}
+
 	int ret = configure_destination_socket();
 	if (ret < 0) {
 		k_mutex_unlock(&ctx.lock);
@@ -302,6 +342,7 @@ int tone_stream_start(const struct shell *shell)
 	ctx.seq_num = 0;
 	ctx.sample_counter = 0;
 	ctx.tone_position = 0;
+	ctx.next_deadline_us = 0U;
 
 	/* Generate tone period if not already done */
 	if (ctx.tone_period_samples == 0) {
@@ -313,10 +354,11 @@ int tone_stream_start(const struct shell *shell)
 	}
 
 	ctx.streaming = true;
+	ctx.next_deadline_us = micros_now();
 
 	k_mutex_unlock(&ctx.lock);
 
-	reschedule_next_packet(ctx.samples_per_packet);
+	k_work_schedule_for_queue(&tone_stream_work_q, &ctx.work, K_NO_WAIT);
 
 	if (shell) {
 		shell_print(shell, "Tone stream started: %u Hz, %u%%, %u ms packets",
