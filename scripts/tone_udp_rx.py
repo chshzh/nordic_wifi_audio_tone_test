@@ -99,6 +99,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+class PlaybackStats:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._underflows = 0
+        self._max_depth = 0
+
+    def record_underflow(self):
+        with self._lock:
+            self._underflows += 1
+
+    def observe_depth(self, depth: int):
+        with self._lock:
+            if depth > self._max_depth:
+                self._max_depth = depth
+
+    def snapshot(self):
+        with self._lock:
+            underflows = self._underflows
+            max_depth = self._max_depth
+            self._underflows = 0
+            self._max_depth = 0
+        return underflows, max_depth
+
+
 def audio_thread(
     play_queue: "queue.Queue[bytes]",
     sample_rate: int,
@@ -106,6 +130,7 @@ def audio_thread(
     device: int | None,
     stop_event: threading.Event,
     bytes_per_frame: int,
+    playback_stats: PlaybackStats,
 ):
     if sd is None:
         LOGGER.error("sounddevice module not available; cannot play audio")
@@ -117,12 +142,14 @@ def audio_thread(
 
     def callback(outdata, frames, time_info, status):  # pragma: no cover - realtime callback
         needed_bytes = frames * bytes_per_frame
+        playback_stats.observe_depth(play_queue.qsize())
         while len(pending) < needed_bytes:
             try:
                 pending.extend(play_queue.get_nowait())
             except queue.Empty:
                 missing = needed_bytes - len(pending)
                 if missing > 0:
+                    playback_stats.record_underflow()
                     pending.extend(b"\x00" * missing)
                 break
         outdata[:] = pending[:needed_bytes]
@@ -183,7 +210,8 @@ def main() -> int:
     if args.listen_port == 50005:
         LOGGER.info("Using default port 50005. To use a different port, specify --listen-port <port_number>")
 
-    playback_queue: queue.Queue[bytes] = queue.Queue(maxsize=64)
+    playback_queue: queue.Queue[bytes] | None
+    playback_stats = None
     stop_event = threading.Event()
     audio_thread_obj = None
 
@@ -198,6 +226,8 @@ def main() -> int:
         wav_writer.setframerate(args.sample_rate)
 
     if not args.no_audio and sd is not None:
+        playback_queue = queue.Queue(maxsize=64)
+        playback_stats = PlaybackStats()
         if target_buffer_bytes > 0 and zero_chunk:
             buffered_bytes = 0
             while buffered_bytes < target_buffer_bytes:
@@ -206,12 +236,21 @@ def main() -> int:
                 buffered_bytes += chunk_len
         audio_thread_obj = threading.Thread(
             target=audio_thread,
-            args=(playback_queue, args.sample_rate, args.channels, args.device, stop_event, bytes_per_frame),
+            args=(
+                playback_queue,
+                args.sample_rate,
+                args.channels,
+                args.device,
+                stop_event,
+                bytes_per_frame,
+                playback_stats,
+            ),
             daemon=True,
         )
         audio_thread_obj.start()
     elif args.no_audio:
         LOGGER.info("Audio playback disabled (--no-audio)")
+        playback_queue = None
     else:
         LOGGER.warning("sounddevice not installed; running without audio output")
 
@@ -240,17 +279,36 @@ def main() -> int:
             if wav_writer is not None:
                 wav_writer.writeframes(payload)
 
-            try:
-                playback_queue.put(payload, timeout=0.05)
-                buffered_bytes = min(buffered_bytes + len(payload), target_buffer_bytes)
-            except queue.Full:
-                LOGGER.warning("Playback queue full; dropping audio chunk")
+            if playback_queue is not None:
+                try:
+                    playback_queue.put(payload, timeout=0.05)
+                    buffered_bytes = min(buffered_bytes + len(payload), target_buffer_bytes)
+                except queue.Full:
+                    LOGGER.warning("Playback queue full; dropping audio chunk")
 
-            if buffered_bytes >= target_buffer_bytes:
-                buffered_bytes = target_buffer_bytes
+                if buffered_bytes >= target_buffer_bytes:
+                    buffered_bytes = target_buffer_bytes
 
             if stats.report_needed(5.0):
                 stats.report(jitter_buffer_samples, args.sample_rate)
+                if playback_queue is not None and playback_stats is not None:
+                    underflows, max_depth = playback_stats.snapshot()
+                    depth = playback_queue.qsize()
+                    if underflows:
+                        LOGGER.warning(
+                            "Playback queue depth=%d/%d underflows=%d max_depth=%d",
+                            depth,
+                            playback_queue.maxsize,
+                            underflows,
+                            max_depth,
+                        )
+                    else:
+                        LOGGER.info(
+                            "Playback queue depth=%d/%d max_depth=%d",
+                            depth,
+                            playback_queue.maxsize,
+                            max_depth,
+                        )
     except KeyboardInterrupt:
         LOGGER.info("Stopping receiver")
     finally:
