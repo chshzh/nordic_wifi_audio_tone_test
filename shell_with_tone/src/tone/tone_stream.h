@@ -40,7 +40,7 @@ void tone_stream_stop(const struct shell *shell);
 void tone_stream_status(const struct shell *shell);
 int tone_stream_set_target(const char *ip_str, uint16_t port);
 int tone_stream_set_params(uint16_t freq_hz, uint8_t amplitude_pct, uint32_t sample_rate_hz,
-		   uint16_t packet_ms);
+			   uint16_t packet_ms);
 int tone_stream_adjust_amplitude(int delta_pct);
 uint8_t tone_stream_get_current_amplitude(void);
 int tone_stream_adjust_amplitude(int delta_pct);

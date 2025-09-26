@@ -143,11 +143,11 @@ static void reschedule_next_packet(void)
 		ctx.next_deadline_us += interval_us;
 	}
 
-	uint64_t delay_us = (ctx.next_deadline_us > now) ? (ctx.next_deadline_us - now) : interval_us;
+	uint64_t delay_us =
+		(ctx.next_deadline_us > now) ? (ctx.next_deadline_us - now) : interval_us;
 	uint32_t delay_clamped = (uint32_t)CLAMP(delay_us, 1U, (uint64_t)UINT32_MAX);
 
-	k_work_reschedule_for_queue(&tone_stream_work_q, &ctx.work,
-				  K_USEC(delay_clamped));
+	k_work_reschedule_for_queue(&tone_stream_work_q, &ctx.work, K_USEC(delay_clamped));
 }
 
 static void send_work_handler(struct k_work *item)
@@ -236,8 +236,8 @@ int tone_stream_init(void)
 	if (!tone_stream_work_q_started) {
 		k_work_queue_init(&tone_stream_work_q);
 		k_work_queue_start(&tone_stream_work_q, tone_stream_work_stack,
-		      K_THREAD_STACK_SIZEOF(tone_stream_work_stack),
-		      K_PRIO_PREEMPT(CONFIG_TONE_STREAM_WORKQUEUE_PRIORITY), NULL);
+				   K_THREAD_STACK_SIZEOF(tone_stream_work_stack),
+				   K_PRIO_PREEMPT(CONFIG_TONE_STREAM_WORKQUEUE_PRIORITY), NULL);
 		if (IS_ENABLED(CONFIG_THREAD_NAME)) {
 			k_thread_name_set(&tone_stream_work_q.thread, "tone_stream");
 		}
@@ -306,8 +306,7 @@ int tone_stream_set_params(uint16_t freq_hz, uint8_t amplitude_pct, uint32_t sam
 	ctx.settings.sample_rate_hz = sample_rate_hz;
 	ctx.settings.packet_duration_ms = packet_ms;
 	ctx.samples_per_packet = samples;
-	ctx.interval_us = (uint32_t)(((uint64_t)samples * 1000000U) /
-				 ctx.settings.sample_rate_hz);
+	ctx.interval_us = (uint32_t)(((uint64_t)samples * 1000000U) / ctx.settings.sample_rate_hz);
 
 	/* Generate new tone period with updated parameters */
 	int ret = generate_tone_period();
@@ -383,7 +382,7 @@ int tone_stream_start(const struct shell *shell)
 
 	if (ctx.interval_us == 0U) {
 		ctx.interval_us = (uint32_t)(((uint64_t)ctx.samples_per_packet * 1000000U) /
-				  ctx.settings.sample_rate_hz);
+					     ctx.settings.sample_rate_hz);
 	}
 
 	int ret = configure_destination_socket();
@@ -471,11 +470,11 @@ void tone_stream_status(const struct shell *shell)
 
 uint8_t tone_stream_get_current_amplitude(void)
 {
-    uint8_t amp;
+	uint8_t amp;
 
-    k_mutex_lock(&ctx.lock, K_FOREVER);
-    amp = ctx.settings.amplitude_pct;
-    k_mutex_unlock(&ctx.lock);
+	k_mutex_lock(&ctx.lock, K_FOREVER);
+	amp = ctx.settings.amplitude_pct;
+	k_mutex_unlock(&ctx.lock);
 
-    return amp;
+	return amp;
 }

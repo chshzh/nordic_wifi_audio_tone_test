@@ -18,10 +18,10 @@ LOG_MODULE_REGISTER(raw_tx_pkt, CONFIG_LOG_DEFAULT_LEVEL);
 
 #include "net_private.h"
 
-#define BEACON_PAYLOAD_LENGTH 256
+#define BEACON_PAYLOAD_LENGTH           256
 #define IEEE80211_SEQ_CTRL_SEQ_NUM_MASK 0xFFF0
-#define IEEE80211_SEQ_NUMBER_INC BIT(4) /* 0-3 is fragment number */
-#define NRF_WIFI_MAGIC_NUM_RAWTX 0x12345678
+#define IEEE80211_SEQ_NUMBER_INC        BIT(4) /* 0-3 is fragment number */
+#define NRF_WIFI_MAGIC_NUM_RAWTX        0x12345678
 
 /* TODO: Copied from nRF70 Wi-Fi driver, need to be moved to a common place */
 
@@ -77,29 +77,21 @@ static struct beacon test_beacon_frame = {
 	.seq_ctrl = 0X0001,
 	/* SSID: NRF_RAW_TX_PACKET_APP */
 	.payload = {
-		0X0C, 0XA2, 0X28, 0X00, 0X00, 0X00, 0X00, 0X00, 0X64, 0X00,
-		0X11, 0X04, 0X00, 0X15, 0X4E, 0X52, 0X46, 0X5F, 0X52, 0X41,
-		0X57, 0X5F, 0X54, 0X58, 0X5F, 0X50, 0X41, 0X43, 0X4B, 0X45,
-		0X54, 0X5F, 0X41, 0X50, 0X50, 0X01, 0X08, 0X82, 0X84, 0X8B,
-		0X96, 0X0C, 0X12, 0X18, 0X24, 0X03, 0X01, 0X06, 0X05, 0X04,
-		0X00, 0X02, 0X00, 0X00, 0X2A, 0X01, 0X04, 0X32, 0X04, 0X30,
-		0X48, 0X60, 0X6C, 0X30, 0X14, 0X01, 0X00, 0X00, 0X0F, 0XAC,
-		0X04, 0X01, 0X00, 0X00, 0X0F, 0XAC, 0X04, 0X01, 0X00, 0X00,
-		0X0F, 0XAC, 0X02, 0X0C, 0X00, 0X3B, 0X02, 0X51, 0X00, 0X2D,
-		0X1A, 0X0C, 0X00, 0X17, 0XFF, 0XFF, 0X00, 0X00, 0X00, 0X00,
-		0X00, 0X00, 0X00, 0X2C, 0X01, 0X01, 0X00, 0X00, 0X00, 0X00,
-		0X00, 0X00, 0X00, 0X00, 0X00, 0X3D, 0X16, 0X06, 0X00, 0X00,
-		0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00,
-		0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X7F, 0X08, 0X04, 0X00,
-		0X00, 0X02, 0X00, 0X00, 0X00, 0X40, 0XFF, 0X1A, 0X23, 0X01,
-		0X78, 0X10, 0X1A, 0X00, 0X00, 0X00, 0X20, 0X0E, 0X09, 0X00,
-		0X09, 0X80, 0X04, 0X01, 0XC4, 0X00, 0XFA, 0XFF, 0XFA, 0XFF,
-		0X61, 0X1C, 0XC7, 0X71, 0XFF, 0X07, 0X24, 0XF0, 0X3F, 0X00,
-		0X81, 0XFC, 0XFF, 0XDD, 0X18, 0X00, 0X50, 0XF2, 0X02, 0X01,
-		0X01, 0X01, 0X00, 0X03, 0XA4, 0X00, 0X00, 0X27, 0XA4, 0X00,
-		0X00, 0X42, 0X43, 0X5E, 0X00, 0X62, 0X32, 0X2F, 0X00
-	}
-};
+		0X0C, 0XA2, 0X28, 0X00, 0X00, 0X00, 0X00, 0X00, 0X64, 0X00, 0X11, 0X04, 0X00, 0X15,
+		0X4E, 0X52, 0X46, 0X5F, 0X52, 0X41, 0X57, 0X5F, 0X54, 0X58, 0X5F, 0X50, 0X41, 0X43,
+		0X4B, 0X45, 0X54, 0X5F, 0X41, 0X50, 0X50, 0X01, 0X08, 0X82, 0X84, 0X8B, 0X96, 0X0C,
+		0X12, 0X18, 0X24, 0X03, 0X01, 0X06, 0X05, 0X04, 0X00, 0X02, 0X00, 0X00, 0X2A, 0X01,
+		0X04, 0X32, 0X04, 0X30, 0X48, 0X60, 0X6C, 0X30, 0X14, 0X01, 0X00, 0X00, 0X0F, 0XAC,
+		0X04, 0X01, 0X00, 0X00, 0X0F, 0XAC, 0X04, 0X01, 0X00, 0X00, 0X0F, 0XAC, 0X02, 0X0C,
+		0X00, 0X3B, 0X02, 0X51, 0X00, 0X2D, 0X1A, 0X0C, 0X00, 0X17, 0XFF, 0XFF, 0X00, 0X00,
+		0X00, 0X00, 0X00, 0X00, 0X00, 0X2C, 0X01, 0X01, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00,
+		0X00, 0X00, 0X00, 0X3D, 0X16, 0X06, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00,
+		0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X00, 0X7F, 0X08, 0X04, 0X00,
+		0X00, 0X02, 0X00, 0X00, 0X00, 0X40, 0XFF, 0X1A, 0X23, 0X01, 0X78, 0X10, 0X1A, 0X00,
+		0X00, 0X00, 0X20, 0X0E, 0X09, 0X00, 0X09, 0X80, 0X04, 0X01, 0XC4, 0X00, 0XFA, 0XFF,
+		0XFA, 0XFF, 0X61, 0X1C, 0XC7, 0X71, 0XFF, 0X07, 0X24, 0XF0, 0X3F, 0X00, 0X81, 0XFC,
+		0XFF, 0XDD, 0X18, 0X00, 0X50, 0XF2, 0X02, 0X01, 0X01, 0X01, 0X00, 0X03, 0XA4, 0X00,
+		0X00, 0X27, 0XA4, 0X00, 0X00, 0X42, 0X43, 0X5E, 0X00, 0X62, 0X32, 0X2F, 0X00}};
 
 void fill_raw_tx_pkt_hdr(int rate_flags, int data_rate, int queue_num)
 {
@@ -123,23 +115,15 @@ int validate(int value, int min, int max, const char *param)
 
 int validate_rate(int data_rate, int flag)
 {
-	if ((flag == NRF_WIFI_FMAC_RAWTX_MODE_LEGACY) && ((data_rate == 1) ||
-							 (data_rate == 2) ||
-							 (data_rate == 55) ||
-							 (data_rate == 11) ||
-							 (data_rate == 6) ||
-							 (data_rate == 9) ||
-							 (data_rate == 12) ||
-							 (data_rate == 18) ||
-							 (data_rate == 24) ||
-							 (data_rate == 36) ||
-							 (data_rate == 48) ||
-							 (data_rate == 54))) {
+	if ((flag == NRF_WIFI_FMAC_RAWTX_MODE_LEGACY) &&
+	    ((data_rate == 1) || (data_rate == 2) || (data_rate == 55) || (data_rate == 11) ||
+	     (data_rate == 6) || (data_rate == 9) || (data_rate == 12) || (data_rate == 18) ||
+	     (data_rate == 24) || (data_rate == 36) || (data_rate == 48) || (data_rate == 54))) {
 
 		return 1;
 	} else if (((flag >= NRF_WIFI_FMAC_RAWTX_MODE_HT &&
-		    flag <= NRF_WIFI_FMAC_RAWTX_MODE_HE_ER_SU)) &&
-		    ((data_rate >= 0) && (data_rate <= 7))) {
+		     flag <= NRF_WIFI_FMAC_RAWTX_MODE_HE_ER_SU)) &&
+		   ((data_rate >= 0) && (data_rate <= 7))) {
 		return 1;
 	}
 
@@ -180,16 +164,14 @@ static int setup_raw_pkt_socket(int *sockfd, struct sockaddr_ll *sa)
 
 static void increment_seq_control(void)
 {
-	test_beacon_frame.seq_ctrl = (test_beacon_frame.seq_ctrl +
-				      IEEE80211_SEQ_NUMBER_INC) &
-				      IEEE80211_SEQ_CTRL_SEQ_NUM_MASK;
+	test_beacon_frame.seq_ctrl = (test_beacon_frame.seq_ctrl + IEEE80211_SEQ_NUMBER_INC) &
+				     IEEE80211_SEQ_CTRL_SEQ_NUM_MASK;
 	if (test_beacon_frame.seq_ctrl > IEEE80211_SEQ_CTRL_SEQ_NUM_MASK) {
 		test_beacon_frame.seq_ctrl = 0X0010;
 	}
 }
 
-static void send_packet(const char *transmission_mode,
-			unsigned int num_pkts, unsigned int delay)
+static void send_packet(const char *transmission_mode, unsigned int num_pkts, unsigned int delay)
 {
 	struct sockaddr_ll sa;
 	int sockfd, ret;
@@ -212,11 +194,10 @@ static void send_packet(const char *transmission_mode,
 	memcpy(test_frame, &raw_tx_pkt, sizeof(struct raw_tx_pkt_header));
 
 	for (int i = 0; i < num_pkts; i++) {
-		memcpy(test_frame + sizeof(struct raw_tx_pkt_header),
-		       &test_beacon_frame, sizeof(test_beacon_frame));
+		memcpy(test_frame + sizeof(struct raw_tx_pkt_header), &test_beacon_frame,
+		       sizeof(test_beacon_frame));
 
-		ret = sendto(sockfd, test_frame, buf_length, 0,
-			     (struct sockaddr *)&sa, sizeof(sa));
+		ret = sendto(sockfd, test_frame, buf_length, 0, (struct sockaddr *)&sa, sizeof(sa));
 		if (ret < 0) {
 			LOG_ERR("Unable to send beacon frame: %s", strerror(errno));
 			num_failures++;
@@ -232,9 +213,7 @@ static void send_packet(const char *transmission_mode,
 	free(test_frame);
 }
 
-static int parse_raw_tx_configure_args(const struct shell *sh,
-				       size_t argc,
-				       char *argv[],
+static int parse_raw_tx_configure_args(const struct shell *sh, size_t argc, char *argv[],
 				       int *flags, int *rate, int *queue)
 {
 	struct getopt_state *state;
@@ -272,14 +251,13 @@ static int parse_raw_tx_configure_args(const struct shell *sh,
 			}
 			opt_num++;
 			break;
-		case'h':
+		case 'h':
 			shell_help(sh);
 			opt_num++;
 			break;
 		case '?':
 		default:
-			LOG_ERR("Invalid option or option usage: %s",
-				argv[opt_index + 1]);
+			LOG_ERR("Invalid option or option usage: %s", argv[opt_index + 1]);
 			return -ENOEXEC;
 		}
 	}
@@ -287,16 +265,13 @@ static int parse_raw_tx_configure_args(const struct shell *sh,
 	return opt_num;
 }
 
-static int cmd_configure_raw_tx_pkt(
-		const struct shell *sh,
-		size_t argc,
-		char *argv[])
+static int cmd_configure_raw_tx_pkt(const struct shell *sh, size_t argc, char *argv[])
 {
 	int opt_num, rate_flags = -1, data_rate = -1, queue_num = -1;
 
 	if (argc == 7) {
-		opt_num = parse_raw_tx_configure_args(sh, argc, argv, &rate_flags,
-						      &data_rate, &queue_num);
+		opt_num = parse_raw_tx_configure_args(sh, argc, argv, &rate_flags, &data_rate,
+						      &queue_num);
 		if (opt_num < 0) {
 			shell_help(sh);
 			return -ENOEXEC;
@@ -306,17 +281,15 @@ static int cmd_configure_raw_tx_pkt(
 		}
 	}
 
-	LOG_INF("Rate-flags: %d Data-rate:%d queue-num:%d",
-		rate_flags, data_rate, queue_num);
+	LOG_INF("Rate-flags: %d Data-rate:%d queue-num:%d", rate_flags, data_rate, queue_num);
 
 	fill_raw_tx_pkt_hdr(rate_flags, data_rate, queue_num);
 
 	return 0;
 }
 
-static int parse_raw_tx_send_args(const struct shell *sh,
-				  size_t argc, char *argv[],
-				  char **tx_mode, int *pkt_num, int *time_delay)
+static int parse_raw_tx_send_args(const struct shell *sh, size_t argc, char *argv[], char **tx_mode,
+				  int *pkt_num, int *time_delay)
 {
 	struct getopt_state *state;
 	int opt;
@@ -333,7 +306,7 @@ static int parse_raw_tx_send_args(const struct shell *sh,
 		switch (opt) {
 		case 'm':
 			if (!((strcmp(optarg, "fixed") == 0) ||
-			    (strcmp(optarg, "continuous") == 0))) {
+			      (strcmp(optarg, "continuous") == 0))) {
 				LOG_ERR("Invalid mode %s", optarg);
 				return -ENOEXEC;
 			}
@@ -356,7 +329,7 @@ static int parse_raw_tx_send_args(const struct shell *sh,
 			}
 			opt_num++;
 			break;
-		case'h':
+		case 'h':
 			shell_help(sh);
 			opt_num++;
 			break;
@@ -377,9 +350,7 @@ static int parse_raw_tx_send_args(const struct shell *sh,
 	return opt_num;
 }
 
-static int cmd_send_raw_tx_pkt(
-		const struct shell *sh,
-		size_t argc, char *argv[])
+static int cmd_send_raw_tx_pkt(const struct shell *sh, size_t argc, char *argv[])
 {
 	int opt_num;
 	char *mode = NULL;
@@ -391,8 +362,7 @@ static int cmd_send_raw_tx_pkt(
 	}
 
 	LOG_INF("argument count: %d", argc);
-	opt_num = parse_raw_tx_send_args(sh, argc, argv, &mode,
-					 &num_packets, &delay);
+	opt_num = parse_raw_tx_send_args(sh, argc, argv, &mode, &num_packets, &delay);
 	if (opt_num < 0) {
 		shell_help(sh);
 		return -ENOEXEC;
@@ -407,8 +377,7 @@ static int cmd_send_raw_tx_pkt(
 	return 0;
 }
 
-static int cmd_tx_injection_mode(const struct shell *sh,
-				 size_t argc, char *argv[])
+static int cmd_tx_injection_mode(const struct shell *sh, size_t argc, char *argv[])
 {
 	struct net_if *iface = NULL;
 	bool mode_val = 0;
@@ -451,8 +420,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
 		      "[enable: 1, disable: 0]\n"
 		      "[-h, --help] : Print out the help for the mode command\n"
 		      "Usage: raw_tx mode 1 or 0\n",
-		      cmd_tx_injection_mode,
-		      2, 0),
+		      cmd_tx_injection_mode, 2, 0),
 	SHELL_CMD_ARG(configure, NULL,
 		      "Configure raw TX packet header\n"
 		      "This command may be used to configure raw TX packet header\n"
@@ -462,8 +430,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
 		      "[-q, --queue-number] : Queue number.\n"
 		      "[-h, --help] : Print out the help for the configure command\n"
 		      "Usage: raw_tx configure -f 0 -d 9 -q 1\n",
-		      cmd_configure_raw_tx_pkt,
-		      7, 0),
+		      cmd_configure_raw_tx_pkt, 7, 0),
 	SHELL_CMD_ARG(send, NULL,
 		      "Send raw TX packet\n"
 		      "This command may be used to send raw TX packets\n"
@@ -475,12 +442,8 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
 		      "Usage:\n"
 		      "raw_tx send -m fixed -n 9 -t 10 (For fixed mode)\n"
 		      "raw_tx send -m continuous -t 10 (For continuous mode)\n",
-		      cmd_send_raw_tx_pkt,
-		      5, 2),
-	SHELL_SUBCMD_SET_END
-);
+		      cmd_send_raw_tx_pkt, 5, 2),
+	SHELL_SUBCMD_SET_END);
 
-SHELL_CMD_REGISTER(raw_tx,
-		   &raw_tx_cmds,
-		   "raw_tx_cmds (To configure and send raw TX packets)",
+SHELL_CMD_REGISTER(raw_tx, &raw_tx_cmds, "raw_tx_cmds (To configure and send raw TX packets)",
 		   NULL);

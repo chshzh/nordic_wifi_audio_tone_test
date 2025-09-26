@@ -30,6 +30,7 @@ static uint8_t get_amp_and_print(const char *label)
 	printk("%s %u%%\n", label, amp);
 	return amp;
 }
+
 #endif
 #if IS_ENABLED(CONFIG_DK_LIBRARY) && IS_ENABLED(CONFIG_TONE_SHELL)
 #define AMP_STEP_PERCENT 5
@@ -63,8 +64,8 @@ static void button_handler(uint32_t button_state, uint32_t has_changed)
 #endif
 
 #if USES_USB_ETH || defined(CONFIG_SLIP)
-static struct in_addr addr = { { { 192, 0, 2, 1 } } };
-static struct in_addr mask = { { { 255, 255, 255, 0 } } };
+static struct in_addr addr = {{{192, 0, 2, 1}}};
+static struct in_addr mask = {{{255, 255, 255, 0}}};
 #endif /* CONFIG_USB_DEVICE_STACK || CONFIG_SLIP */
 
 #if USES_USB_ETH
@@ -82,15 +83,13 @@ int init_usb(void)
 }
 #endif
 
-
 int main(void)
 {
 #if NRFX_CLOCK_ENABLED && (defined(CLOCK_FEATURE_HFCLK_DIVIDE_PRESENT) || NRF_CLOCK_HAS_HFCLK192M)
 	/* For now hardcode to 128MHz */
-	nrfx_clock_divider_set(NRF_CLOCK_DOMAIN_HFCLK,
-			       NRF_CLOCK_HFCLK_DIV_1);
+	nrfx_clock_divider_set(NRF_CLOCK_DOMAIN_HFCLK, NRF_CLOCK_HFCLK_DIV_1);
 #endif
-	printk("Starting %s with CPU frequency: %d MHz\n", CONFIG_BOARD, SystemCoreClock/MHZ(1));
+	printk("Starting %s with CPU frequency: %d MHz\n", CONFIG_BOARD, SystemCoreClock / MHZ(1));
 #if IS_ENABLED(CONFIG_DK_LIBRARY) && IS_ENABLED(CONFIG_TONE_SHELL)
 	if (dk_buttons_init(button_handler) == 0) {
 		printk("Tone amplitude control: BTN1 = -5%%, BTN2 = +5%%\n");

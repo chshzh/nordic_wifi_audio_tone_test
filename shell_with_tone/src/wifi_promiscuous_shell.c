@@ -56,12 +56,8 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
 		      "[enable: 1, disable: 0]\n"
 		      "[-h, --help] : Print out the help for the mode command\n"
 		      "Usage: promiscuous_set mode 1 or 0\n",
-		      cmd_wifi_promisc,
-		      2, 0),
-	SHELL_SUBCMD_SET_END
-);
+		      cmd_wifi_promisc, 2, 0),
+	SHELL_SUBCMD_SET_END);
 
-SHELL_CMD_REGISTER(promiscuous_set,
-		   &promisc_cmd,
-		   "Promiscuous mode command (To set promiscuous mode)",
-		   NULL);
+SHELL_CMD_REGISTER(promiscuous_set, &promisc_cmd,
+		   "Promiscuous mode command (To set promiscuous mode)", NULL);

@@ -68,10 +68,16 @@ jobs:
               echo "Error: Overlay file ${{ matrix.config.overlay }} not found"
               exit 1
             fi
-            west build -p -b nrf7002dk/nrf5340/cpuapp -d ${{ matrix.config.build_dir }} -- -DEXTRA_CONF_FILE=${{ matrix.config.overlay }}
+            west build -p -b nrf7002dk/nrf5340/cpuapp -- -DEXTRA_CONF_FILE=${{ matrix.config.overlay }}
           else
             echo "Building with default configuration"
-            west build -p -b nrf7002dk/nrf5340/cpuapp -d ${{ matrix.config.build_dir }}
+            west build -p -b nrf7002dk/nrf5340/cpuapp
+          fi
+
+          # Rename build directory for consistency
+          if [ -d "build" ]; then
+            mv build ${{ matrix.config.build_dir }}
+            echo "Renamed build directory to ${{ matrix.config.build_dir }}"
           fi
 
       - name: Verify build outputs
@@ -80,19 +86,47 @@ jobs:
           echo "Verifying build artifacts for ${{ matrix.config.name }}..."
           BUILD_DIR=${{ matrix.config.build_dir }}
 
-          # Check if essential build files exist
-          [ -f "$BUILD_DIR/zephyr/zephyr.hex" ] || (echo "Missing zephyr.hex" && exit 1)
-          [ -f "$BUILD_DIR/zephyr/zephyr.elf" ] || (echo "Missing zephyr.elf" && exit 1)
+          # List all files in build directory to debug
+          echo "Build directory contents:"
+          find $BUILD_DIR -name "*.hex" -o -name "*.elf" 2>/dev/null || true
+
+          # The actual path structure is build_dir/shell_with_tone/zephyr/
+          ZEPHYR_DIR="$BUILD_DIR/shell_with_tone/zephyr"
+          if [ ! -d "$ZEPHYR_DIR" ]; then
+            # Fallback to direct zephyr directory
+            ZEPHYR_DIR="$BUILD_DIR/zephyr"
+          fi
+
+          echo "Looking for firmware files in: $ZEPHYR_DIR"
+
+          # Check for merged.hex (primary firmware file)
+          if [ -f "$ZEPHYR_DIR/merged.hex" ]; then
+            echo "✓ Found merged.hex (primary firmware)"
+            FIRMWARE_FILE="$ZEPHYR_DIR/merged.hex"
+          elif [ -f "$ZEPHYR_DIR/zephyr.hex" ]; then
+            echo "✓ Found zephyr.hex"
+            FIRMWARE_FILE="$ZEPHYR_DIR/zephyr.hex"
+          else
+            echo "❌ No firmware hex file found"
+            exit 1
+          fi
+
+          # Check for ELF file
+          if [ -f "$ZEPHYR_DIR/zephyr.elf" ]; then
+            echo "✓ Found zephyr.elf"
+          else
+            echo "⚠ zephyr.elf not found"
+          fi
 
           # Display build information
           echo "Build completed successfully!"
-          echo "Firmware size information:"
-          ls -lah "$BUILD_DIR/zephyr/"*.hex "$BUILD_DIR/zephyr/"*.elf 2>/dev/null || true
+          echo "Firmware files:"
+          ls -lah "$FIRMWARE_FILE" "$ZEPHYR_DIR/zephyr.elf" 2>/dev/null || true
 
           # Show memory usage if available
-          if [ -f "$BUILD_DIR/zephyr/zephyr.elf" ]; then
+          if [ -f "$ZEPHYR_DIR/zephyr.elf" ]; then
             echo "Memory usage:"
-            size "$BUILD_DIR/zephyr/zephyr.elf" || echo "Size information not available"
+            size "$ZEPHYR_DIR/zephyr.elf" || echo "Size information not available"
           fi
 
       - name: Upload build artifacts for ${{ matrix.config.name }}
@@ -101,9 +135,12 @@ jobs:
         with:
           name: build-artifacts-${{ matrix.config.name }}
           path: |
+            app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/shell_with_tone/zephyr/merged.hex
+            app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/shell_with_tone/zephyr/zephyr.hex
+            app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/shell_with_tone/zephyr/zephyr.elf
+            app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/zephyr/merged.hex
             app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/zephyr/zephyr.hex
             app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/zephyr/zephyr.elf
-            app-workspace/nordic_wifi_audio_tone_test/shell_with_tone/${{ matrix.config.build_dir }}/zephyr/merged.hex
 
   validate-documentation:
     runs-on: ubuntu-24.04
@@ -157,8 +194,23 @@ jobs:
       - name: Prepare west workspace for analysis
         working-directory: app-workspace
         run: |
+          echo "Using NCS version: ${{ needs.set-version.outputs.NCS_VERSION }}"
           west init -l nordic_wifi_audio_tone_test
           west update -o=--depth=1 -n
+
+      - name: Verify Zephyr clang-format file
+        working-directory: app-workspace
+        run: |
+          echo "Verifying Zephyr .clang-format file availability..."
+          if [ -f zephyr/.clang-format ]; then
+            echo "✓ Found zephyr/.clang-format file"
+            echo "Zephyr version info:"
+            head -5 zephyr/.clang-format || true
+          else
+            echo "❌ zephyr/.clang-format file not found!"
+            ls -la zephyr/ || true
+            exit 1
+          fi
 
       - name: Run Zephyr checkpatch on diffs
         working-directory: app-workspace
@@ -173,19 +225,38 @@ jobs:
       - name: Check code style with clang-format
         working-directory: app-workspace
         run: |
-          echo "Checking C/C++ formatting..."
+          echo "Checking C/C++ formatting with NCS ${{ needs.set-version.outputs.NCS_VERSION }} clang-format rules..."
+          
+          # Ensure we're using the correct Zephyr .clang-format file from the current NCS version
           if [ -f zephyr/.clang-format ]; then
-            cp zephyr/.clang-format nordic_wifi_audio_tone_test/.clang-format
+            echo "Copying Zephyr .clang-format (NCS ${{ needs.set-version.outputs.NCS_VERSION }}) to shell_with_tone directory..."
+            cp zephyr/.clang-format nordic_wifi_audio_tone_test/shell_with_tone/.clang-format
+            echo "✓ Using clang-format rules from zephyr/.clang-format"
+          else
+            echo "❌ ERROR: zephyr/.clang-format not found!"
+            exit 1
           fi
+          
+          # Find and check all C/C++ source files
           FILES=$(find nordic_wifi_audio_tone_test/shell_with_tone/src -name "*.c" -o -name "*.h" 2>/dev/null || true)
 
           if [ -n "$FILES" ]; then
             echo "Found C/C++ files for formatting check:"
             echo "$FILES"
+            echo ""
+            
+            # Check each file with clang-format
             for file in $FILES; do
-              echo "Checking: $file"
-              clang-format --dry-run --Werror "$file"
+              echo "Checking formatting: $file"
+              if ! clang-format --dry-run --Werror "$file"; then
+                echo "❌ Formatting violations found in: $file"
+                echo "To fix locally, run: clang-format -i $file"
+                exit 1
+              else
+                echo "✓ $file formatting is correct"
+              fi
             done
+            echo "✓ All files passed clang-format validation"
           else
             echo "No C/C++ source files found for clang-format check"
           fi
@@ -214,18 +285,60 @@ jobs:
               config_name=$(echo "$config_dir" | sed 's/build-artifacts-//')
               echo "Processing $config_name artifacts..."
 
-              # Create organized files for each configuration
-              if [ -f "$config_dir/zephyr/zephyr.hex" ]; then
-                cp "$config_dir/zephyr/zephyr.hex" "../release_assets/${config_name}_firmware.hex"
+              # List all files in the artifact directory for debugging
+              echo "Files in $config_dir:"
+              find "$config_dir" -type f -name "*.hex" -o -name "*.elf" 2>/dev/null || true
+
+              # Priority 1: merged.hex (primary firmware) - check multiple possible paths
+              FIRMWARE_FOUND=false
+              for path in \
+                "$config_dir/shell_with_tone/zephyr/merged.hex" \
+                "$config_dir/zephyr/merged.hex" \
+                "$config_dir/merged.hex" \
+                "$config_dir/shell_with_tone/zephyr/zephyr.hex" \
+                "$config_dir/zephyr/zephyr.hex"; do
+                if [ -f "$path" ]; then
+                  cp "$path" "../release_assets/${config_name}_firmware.hex"
+                  echo "✓ Using firmware from: $path"
+                  FIRMWARE_FOUND=true
+                  break
+                fi
+              done
+
+              if [ "$FIRMWARE_FOUND" = "false" ]; then
+                echo "⚠ No firmware hex file found for $config_name"
               fi
-              if [ -f "$config_dir/zephyr/zephyr.elf" ]; then
-                cp "$config_dir/zephyr/zephyr.elf" "../release_assets/${config_name}_firmware.elf"
-              fi
-              if [ -f "$config_dir/zephyr/merged.hex" ]; then
-                cp "$config_dir/zephyr/merged.hex" "../release_assets/${config_name}_merged.hex"
-              fi
+
+              # Always include ELF file if available - check multiple paths
+              for elf_path in \
+                "$config_dir/shell_with_tone/zephyr/zephyr.elf" \
+                "$config_dir/zephyr/zephyr.elf"; do
+                if [ -f "$elf_path" ]; then
+                  cp "$elf_path" "../release_assets/${config_name}_firmware.elf"
+                  echo "✓ Including ELF from: $elf_path"
+                  break
+                fi
+              done
             fi
           done
+
+      - name: Create build info file
+        run: |
+          echo "# Build Information" > release_assets/BUILD_INFO.txt
+          echo "Tag: ${GITHUB_REF#refs/tags/}" >> release_assets/BUILD_INFO.txt
+          echo "Commit: ${{ github.sha }}" >> release_assets/BUILD_INFO.txt
+          echo "Built: $(date -u)" >> release_assets/BUILD_INFO.txt
+          echo "Repository: ${{ github.repository }}" >> release_assets/BUILD_INFO.txt
+          echo "Workflow: ${{ github.workflow }}" >> release_assets/BUILD_INFO.txt
+          echo "Run ID: ${{ github.run_id }}" >> release_assets/BUILD_INFO.txt
+
+      - name: Get tag information
+        id: tag_info
+        run: |
+          echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "commit_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "commit_date=$(git log -1 --format=%ci)" >> $GITHUB_OUTPUT
+          echo "commit_message=$(git log -1 --format=%s)" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -234,20 +347,29 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          tag_name: ${{ steps.tag_info.outputs.tag_name }}
+          name: "Nordic Wi-Fi Tone Test ${{ steps.tag_info.outputs.tag_name }}"
           body: |
-            ## Nordic Wi-Fi Audio Tone Test Release
+            ## Nordic Wi-Fi Audio Tone Test ${{ steps.tag_info.outputs.tag_name }}
 
             This release contains firmware binaries for the nRF7002DK Wi-Fi Tone Shell application.
 
+            ### Release Information
+            - **Tag**: `${{ steps.tag_info.outputs.tag_name }}`
+            - **Commit**: `${{ steps.tag_info.outputs.commit_sha }}`
+            - **Built**: ${{ steps.tag_info.outputs.commit_date }}
+            - **Commit Message**: ${{ steps.tag_info.outputs.commit_message }}
+
+            ### Application Features
             - **Wi-Fi Tone Shell**: Wi-Fi shell with tone generation capabilities for audio testing over UDP
 
             ### Files included:
-            - `Wi-Fi_Tone_Shell_firmware.hex`: Main firmware binary for flashing
-            - `Wi-Fi_Tone_Shell_firmware.elf`: ELF file for debugging
-            - `Wi-Fi_Tone_Shell_merged.hex`: Merged hex file (if available)
+            - `Wi-Fi_Tone_Shell_firmware.hex`: Primary firmware binary for flashing (merged.hex or zephyr.hex)
+            - `Wi-Fi_Tone_Shell_firmware.elf`: ELF file for debugging and symbol information
 
             ### Hardware Support:
             - nRF7002DK (nRF5340 + nRF7002)
+            - Nordic Connect SDK ${{ steps.tag_info.outputs.tag_name }}
 
             ### Features:
             - Wi-Fi connectivity and shell commands
@@ -255,5 +377,9 @@ jobs:
             - UDP audio streaming capabilities
 
             ### Usage:
-            Flash the `Wi-Fi_Tone_Shell_firmware.hex` file to your nRF7002DK using nRF Connect for Desktop Programmer or command line tools.
+            1. Flash the `Wi-Fi_Tone_Shell_firmware.hex` file to your nRF7002DK using nRF Connect for Desktop Programmer
+            2. Connect to the device via UART/USB
+            3. Use shell commands to configure Wi-Fi and test tone generation
+
+            **Note**: The firmware.hex file contains the merged firmware (including bootloader and application) ready for flashing.
 
