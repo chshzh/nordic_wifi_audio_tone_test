@@ -9,6 +9,7 @@ import argparse
 import collections
 import logging
 import queue
+import signal
 import socket
 import struct
 import sys
@@ -83,6 +84,31 @@ class Stats:
         )
         self.received_since_last_report = 0  # Reset counter for next report period
         self.last_report = now
+
+
+def discover_local_ips() -> list[str]:
+    ips: set[str] = set()
+
+    try:
+        hostname = socket.gethostname()
+        _, _, host_ips = socket.gethostbyname_ex(hostname)
+        ips.update(host_ips)
+    except (socket.gaierror, OSError):
+        pass
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe_sock:
+            probe_sock.connect(("8.8.8.8", 80))
+            ips.add(probe_sock.getsockname()[0])
+    except OSError:
+        pass
+
+    if not ips:
+        return []
+
+    sorted_ips = sorted(ips)
+    non_loopback = [ip for ip in sorted_ips if not ip.startswith("127.")]
+    return non_loopback or sorted_ips
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -173,6 +199,11 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
+    def handle_sigTSTP(signum, frame):  # pragma: no cover - signal handling
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTSTP, handle_sigTSTP)
+
     handlers = [logging.StreamHandler()]
     if args.log_file:
         handlers.append(logging.FileHandler(args.log_file))
@@ -204,11 +235,28 @@ def main() -> int:
             pass
     sock.bind(("0.0.0.0", args.listen_port))
     sock.settimeout(1.0)
-    LOGGER.info("Listening on UDP port %d", args.listen_port)
-    
+
+    bound_ip, bound_port = sock.getsockname()
+    LOGGER.info("Listening on %s:%d", bound_ip, bound_port)
+
+    if bound_ip == "0.0.0.0":
+        local_ips = discover_local_ips()
+        if local_ips:
+            endpoints = ", ".join(f"{ip}:{bound_port}" for ip in local_ips)
+            LOGGER.info("Reachable on local interfaces: %s", endpoints)
+            LOGGER.info("nRF7002DK tone start command: tone start %s %d", local_ips[0], bound_port)
+        else:
+            LOGGER.info("Reachable on all interfaces; local IP discovery unavailable")
+            LOGGER.info("nRF7002DK tone start command: tone start <receiver_ip> %d", bound_port)
+    else:
+        LOGGER.info("Reachable on %s:%d", bound_ip, bound_port)
+        LOGGER.info("nRF7002DK tone start command: tone start %s %d", bound_ip, bound_port)
+
     # Remind user about port configuration when using default
     if args.listen_port == 50005:
         LOGGER.info("Using default port 50005. To use a different port, specify --listen-port <port_number>")
+
+    LOGGER.info("Use Ctrl+Z to exit the receiver cleanly")
 
     playback_queue: queue.Queue[bytes] | None
     playback_stats = None
