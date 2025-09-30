@@ -54,12 +54,11 @@ The script reports `Playback queue depth` and `underflows`; non-zero underflows 
 python tone_udp_tx.py --ip 192.168.1.100
 ```
 
-## Releases
-Firmware artifacts are published via GitHub Actions. On each merge to `main` (and tags starting with `v`) the workflow in `.github/workflows/build.yml` builds the `overlay-tone.conf` image and uploads `merged.hex` as an artifact. To download:
-- Open the repository’s **Actions** tab on GitHub
-- Select the latest successful **Build and Test Wi-Fi Tone Test** run
-- Download the `build-Wi-Fi Tone Shell (tone overlay)` artifact to get the compiled firmware
-
 ## Network Notes
-- Keep devices on the same subnet; UDP port 50005 must be open.
-- Disabling Wi-Fi power save on the DUT helps maintain consistent spacing for the tone scheduler.
+
+- Keep devices on the same subnet.
+- UDP port 50005 must be open.
+
+## Releases
+
+The prebuilt firmware for nRF7002DK can be found in [Releases](https://github.com/chshzh/nordic_wifi_audio_tone_test/releases) page.
