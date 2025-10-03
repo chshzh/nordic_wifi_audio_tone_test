@@ -2,6 +2,8 @@
 
 Evaluate UDP audio transport on the Nordic nRF7002DK with a turnkey tone generator, latency-friendly scheduler, and desktop tools for capture and analysis.
 
+> **📖 For a comprehensive overview of system capabilities, features, and use cases, see [CAPABILITIES.md](CAPABILITIES.md)**
+
 ## Hardware & Firmware
 - **Target board:** nRF7002 DK (nrf7002dk/nrf5340/cpuapp)
 - **Wi-Fi device:** integrated nRF7002 (2.4/5 GHz)
