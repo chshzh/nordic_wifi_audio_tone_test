@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Wi-Fi audio tone UDP receiver and player.
 
 Listens for UDP packets in the wifi_audio_tone_test format, buffers audio to
