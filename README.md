@@ -61,4 +61,4 @@ python tone_udp_tx.py --ip 192.168.1.100
 
 ## Releases
 
-The prebuilt firmware for nRF7002DK can be found in [Releases](https://github.com/chshzh/nordic_wifi_audio_tone_test/releases) page.
+The prebuilt shell with tone firmware for nRF7002DK can be found in [Releases](https://github.com/chshzh/nordic_wifi_audio_tone_test/releases) page.
